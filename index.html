@@ -60,6 +60,12 @@ body{
   pointer-events:none;
 }
 .header-inner{position:relative;max-width:var(--max-w);margin:0 auto}
+.brand-link{margin-top:.75rem;font-size:.9rem;font-weight:700}
+.brand-link a{color:#fff;text-underline-offset:3px}
+.footer-brand{margin-top:.6rem!important;font-weight:700}
+.footer-brand a{color:var(--accent);text-underline-offset:3px}
+.choice-item:focus-visible,.chip:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+
 .header-badge{
   display:inline-flex;align-items:center;gap:.4rem;
   background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.15);
@@ -341,13 +347,14 @@ select{cursor:pointer;appearance:auto}
     <div class="header-badge"><span class="dot"></span> Ferramenta para professores</div>
     <h1>Gerador de Tutores com IA</h1>
     <p>Cria um tutor inteligente para a tua disciplina, passo a passo, sem conhecimentos técnicos. Baseado no modelo dos 10 passos.</p>
+    <p class="brand-link"><a href="https://jfborges.com/" target="_blank" rel="noopener noreferrer">TIC, Educação e WEB ↗</a></p>
   </div>
 </header>
 
 <nav class="progress-bar" id="progressBar" style="display:none">
   <div class="progress-inner">
-    <div class="progress-steps" id="progressSteps"></div>
-    <div class="progress-label" id="progressLabel"></div>
+    <div class="progress-steps" id="progressSteps" role="progressbar" aria-label="Progresso de configuração" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0"></div>
+    <div class="progress-label" id="progressLabel" aria-live="polite"></div>
   </div>
 </nav>
 
@@ -558,6 +565,7 @@ select{cursor:pointer;appearance:auto}
       <div class="field-group">
         <label for="outrasNotas">Outras indicações para o tutor <span class="optional">(opcional)</span></label>
         <textarea id="outrasNotas" rows="2" placeholder="Ex.: Os alunos têm teste na próxima semana; usar exemplos do quotidiano; evitar frases muito longas…"></textarea>
+        <div class="field-hint">Não incluas nomes, contactos, diagnósticos identificáveis ou outros dados pessoais dos alunos.</div>
       </div>
     </div>
 
@@ -617,6 +625,16 @@ select{cursor:pointer;appearance:auto}
           <option value="es">Espanhol (para aulas de Espanhol)</option>
         </select>
       </div>
+
+      <div class="field-group">
+        <label for="modoAjuda">Quando o aluno bloqueia, como deve agir o tutor?</label>
+        <select id="modoAjuda">
+          <option value="adaptativo" selected>Adaptativo (recomendado): pistas → exemplo → resolução guiada</option>
+          <option value="socratico">Socrático: pistas graduais antes de explicar</option>
+          <option value="modelado">Exemplo primeiro: demonstra um caso semelhante</option>
+        </select>
+        <div class="field-hint">O tutor também pergunta ao aluno como se sente em relação ao tema, no início e no fim, para ajustar o apoio.</div>
+      </div>
     </div>
 
     <div class="btn-row">
@@ -672,6 +690,7 @@ select{cursor:pointer;appearance:auto}
 <footer class="site-footer">
   <p>Gerador de Tutores com IA — Ferramenta de apoio a professores do ensino obrigatório em Portugal</p>
   <p style="margin-top:.3rem">Baseado no modelo dos 10 passos de tutoria cognitiva · Sem recolha de dados · Código aberto</p>
+  <p class="footer-brand"><a href="https://jfborges.com/" target="_blank" rel="noopener noreferrer">TIC, Educação e WEB</a></p>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -714,6 +733,18 @@ const IDADES_POR_ANO = {
 document.addEventListener('DOMContentLoaded', () => {
   buildProgressSteps();
   buildPassosToggles();
+  document.querySelectorAll('.choice-item, .chip').forEach(item => {
+    item.setAttribute('role', 'button');
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('aria-pressed', String(item.classList.contains('selected')));
+  });
+  document.addEventListener('keydown', event => {
+    const item = event.target.closest('.choice-item, .chip');
+    if (!item || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault();
+    if (item.classList.contains('choice-item')) selectChoice(item, item.closest('.choice-grid').id);
+    else toggleChip(item);
+  });
 });
 
 function buildProgressSteps(){
@@ -764,6 +795,7 @@ function goToStep(n){
     s.className = 'progress-step' + (si < n ? ' done' : si === n ? ' active' : '');
   });
   document.getElementById('progressLabel').textContent = `${n} / ${TOTAL_STEPS}`;
+  document.getElementById('progressSteps').setAttribute('aria-valuenow', String(n));
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -776,6 +808,10 @@ function validateStep(n){
   }
   if(n === 2){
     if(!getVal('tema').trim()){showToast('Indica o tema principal da sessão.');return false}
+  }
+  if(n === 4 && getActivePassos().length === 0){
+    showToast('Ativa pelo menos um passo pedagógico.');
+    return false;
   }
   return true;
 }
@@ -790,11 +826,18 @@ function showToast(msg){
 }
 
 function selectChoice(el,gridId){
-  document.querySelectorAll(`#${gridId} .choice-item`).forEach(c=>c.classList.remove('selected'));
+  document.querySelectorAll(`#${gridId} .choice-item`).forEach(c=>{
+    c.classList.remove('selected');
+    c.setAttribute('aria-pressed','false');
+  });
   el.classList.add('selected');
+  el.setAttribute('aria-pressed','true');
 }
 
-function toggleChip(el){el.classList.toggle('selected')}
+function toggleChip(el){
+  const selected = el.classList.toggle('selected');
+  el.setAttribute('aria-pressed',String(selected));
+}
 
 function handleDisciplinaChange(){
   document.getElementById('disciplinaCustomWrap').style.display =
@@ -855,6 +898,7 @@ function generatePrompt(){
   const duracao = getVal('duracaoSessao');
   const modalidade = getVal('modalidade');
   const lingua = getVal('lingua');
+  const modoAjuda = getVal('modoAjuda');
   const passos = getActivePassos();
 
   const tomDescMap = {
@@ -862,6 +906,12 @@ function generatePrompt(){
     'formal': 'formal e estruturado, claro e objetivo, como um manual bem escrito',
     'divertido': 'divertido e lúdico, usando humor adequado à idade, como um animador pedagógico',
     'desafiante': 'desafiante e exigente, que incentiva a superação, como um treinador motivacional',
+  };
+
+  const modoAjudaDescMap = {
+    'adaptativo': 'Começa com uma pista curta. Se o aluno continuar bloqueado após duas tentativas, resolve em conjunto um exemplo semelhante, explicando cada decisão; depois, pede-lhe que tente outro exercício equivalente.',
+    'socratico': 'Começa com perguntas orientadoras e pistas graduais. Se, após duas tentativas, o aluno continuar bloqueado, explica o raciocínio passo a passo e confirma a compreensão com um exemplo novo.',
+    'modelado': 'Apresenta primeiro um exemplo semelhante resolvido e explica o raciocínio em voz alta. Depois, resolve um segundo exemplo com o aluno e pede-lhe que tente um terceiro de forma autónoma.'
   };
 
   const tratamentoDesc = tratamento === 'tu'
@@ -919,16 +969,18 @@ function generatePrompt(){
   }
 
   p += `REGRAS FUNDAMENTAIS\n`;
-  p += `1. Nunca dês a resposta diretamente. Guia o aluno até ela.\n`;
+  p += `1. Não reveles de imediato a resposta final: usa o modo de apoio escolhido e conduz o aluno pelo raciocínio. Se continuar bloqueado, explica passo a passo sem o deixar preso num ciclo de perguntas.\n`;
   p += `2. Nunca avances para o conceito seguinte sem confirmar que o aluno compreendeu o anterior.\n`;
   p += `3. Se o aluno errar, explica PORQUÊ está errado antes de dar nova oportunidade.\n`;
   p += `4. Nunca digas apenas «errado» — explica sempre o raciocínio correto.\n`;
   p += `5. Adapta a linguagem e os exemplos à idade (${idade}).\n`;
   p += `6. Usa exemplos do quotidiano e, quando possível, de textos ou conteúdos do programa do ${ano}.\n`;
-  p += `7. Se o aluno escrever «não sei» repetidamente, não cedas — simplifica a explicação e reformula a pergunta.\n`;
-  p += `8. Mantém respostas curtas e objetivas. Máximo de 3 a 5 frases por intervenção, salvo quando o passo exige mais.\n`;
-  p += `9. Não uses jargão técnico sem o explicar primeiro.\n`;
-  p += `10. Quando existir terminologia oficial (dicionários terminológicos, nomenclatura aprovada), usa-a com rigor.\n\n`;
+  p += `7. Protocolo para bloqueios: ${modoAjudaDescMap[modoAjuda] || modoAjudaDescMap.adaptativo}\n`;
+  p += `8. No início, convida o aluno a indicar a confiança de 1 a 5 (sem caráter avaliativo); no fim, pergunta novamente e ajuda-o a identificar o que já consegue fazer e o que deve rever.\n`;
+  p += `9. Mantém respostas curtas e objetivas. Máximo de 3 a 5 frases por intervenção, salvo quando o passo exige mais.\n`;
+  p += `10. Não uses jargão técnico sem o explicar primeiro.\n`;
+  p += `11. Quando existir terminologia oficial (dicionários terminológicos, nomenclatura aprovada), usa-a com rigor.\n`;
+  p += `12. Nunca solicites nomes completos, contactos, diagnósticos identificáveis ou outros dados pessoais dos alunos.\n\n`;
 
   p += `MODELO PEDAGÓGICO — PASSOS DA SESSÃO\nSegue estes passos pela ordem indicada:\n\n`;
 
@@ -1030,6 +1082,7 @@ function generatePrompt(){
     ['Idade', idade],
     ['Tema', tema],
     ['Tom', tom],
+    ['Estratégia quando há bloqueio', {adaptativo:'Adaptativa: pistas, exemplo e resolução guiada',socratico:'Socrática: pistas graduais e explicação se necessário',modelado:'Exemplo modelado antes da prática'}[modoAjuda]],
     ['Tratamento', tratamento === 'tu' ? 'Tutear (tu)' : 'Tratar por «você»'],
     ['Duração', duracao === 'livre' ? 'Sem limite' : duracao + ' min'],
     ['Modalidade', modalidadeMap[modalidade]],
@@ -1089,7 +1142,11 @@ function resetAll(){
   document.getElementById('duracaoSessao').value = '45';
   document.getElementById('modalidade').value = 'pares';
   document.getElementById('lingua').value = 'pt-PT';
-  document.querySelectorAll('.chip.selected').forEach(c=>c.classList.remove('selected'));
+  document.getElementById('modoAjuda').value = 'adaptativo';
+  document.querySelectorAll('.chip.selected').forEach(c=>{
+    c.classList.remove('selected');
+    c.setAttribute('aria-pressed','false');
+  });
   document.querySelectorAll('#passosToggles input').forEach(cb=>cb.checked=true);
   selectChoice(document.querySelector('#tomGrid .choice-item[data-value="amigável"]'),'tomGrid');
   selectChoice(document.querySelector('#tratamentoGrid .choice-item[data-value="tu"]'),'tratamentoGrid');
